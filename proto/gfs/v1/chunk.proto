@@ -1,0 +1,138 @@
+// Copyright 2026 The gofs Authors.
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package gfs.v1;
+
+import "gfs/v1/common.proto";
+
+option go_package = "github.com/aayush0325/gofs/gen/gfs/v1;gfsv1";
+
+// ChunkServer stores immutable-handle, mutable-data chunk files. All RPCs are
+// mutually authenticated with TLS. A client sends mutations to the primary;
+// the primary forwards to secondaries before applying locally.
+service ChunkServer {
+  // CreateChunk creates an empty chunk at an explicit handle and version.
+  rpc CreateChunk(CreateChunkRequest) returns (CreateChunkResponse);
+  // AdvanceVersion fences a replica at a newer master version without changing
+  // its data. The master calls this when granting a lease.
+  rpc AdvanceVersion(AdvanceVersionRequest) returns (AdvanceVersionResponse);
+  // CopyChunk copies an existing chunk to a new handle. If the source is not
+  // local, the destination fetches it from one of the supplied replicas. This
+  // is used by copy-on-write snapshots and re-replication.
+  rpc CopyChunk(CopyChunkRequest) returns (CopyChunkResponse);
+  // ReadChunk returns one bounded data block and verifies its checksums.
+  rpc ReadChunk(ReadChunkRequest) returns (ReadChunkResponse);
+  // WriteChunk writes at an explicit offset. When secondaries are present the
+  // receiver is the primary and forwards the mutation before applying it.
+  rpc WriteChunk(WriteChunkRequest) returns (WriteChunkResponse);
+  // AppendChunk appends an atomic record. The primary chooses the offset and
+  // forwards the same offset to all secondaries.
+  rpc AppendChunk(AppendChunkRequest) returns (AppendChunkResponse);
+  // DeleteChunk removes a chunk and its checksum sidecar.
+  rpc DeleteChunk(DeleteChunkRequest) returns (DeleteChunkResponse);
+  // CheckChunk verifies the chunk's size and all block checksums.
+  rpc CheckChunk(CheckChunkRequest) returns (CheckChunkResponse);
+}
+
+message CreateChunkRequest {
+  string handle = 1;
+  uint64 version = 2;
+}
+
+message CreateChunkResponse {
+  int64 size = 1;
+  uint64 version = 2;
+}
+
+message AdvanceVersionRequest {
+  string handle = 1;
+  uint64 version = 2;
+}
+
+message AdvanceVersionResponse {
+  uint64 version = 1;
+}
+
+message CopyChunkRequest {
+  string handle = 1;
+  string source_handle = 2;
+  uint64 version = 3;
+  repeated Replica sources = 4;
+}
+
+message CopyChunkResponse {
+  int64 size = 1;
+  uint64 version = 2;
+}
+
+message ReadChunkRequest {
+  string handle = 1;
+  uint64 version = 2;
+  int64 offset = 3;
+  int64 length = 4;
+}
+
+message ReadChunkResponse {
+  bytes data = 1;
+  int64 size = 2;
+  uint64 version = 3;
+  bool checksum_verified = 4;
+}
+
+message WriteChunkRequest {
+  string handle = 1;
+  uint64 version = 2;
+  int64 offset = 3;
+  bytes data = 4;
+  string mutation_id = 5;
+  repeated Replica secondaries = 6;
+  // forward is true when this request came from a primary. Forwarded requests
+  // never forward again, preventing replication loops.
+  bool forward = 7;
+}
+
+message WriteChunkResponse {
+  int64 bytes_written = 1;
+  int64 size = 2;
+  uint64 version = 3;
+  bool deduplicated = 4;
+}
+
+message AppendChunkRequest {
+  string handle = 1;
+  uint64 version = 2;
+  bytes data = 3;
+  string mutation_id = 4;
+  repeated Replica secondaries = 5;
+  bool forward = 6;
+  // offset is populated by the primary for forwarded requests and ignored for
+  // the initial primary request.
+  int64 offset = 7;
+}
+
+message AppendChunkResponse {
+  int64 offset = 1;
+  int64 bytes_appended = 2;
+  int64 size = 3;
+  uint64 version = 4;
+  bool deduplicated = 5;
+}
+
+message DeleteChunkRequest {
+  string handle = 1;
+}
+
+message DeleteChunkResponse {}
+
+message CheckChunkRequest {
+  string handle = 1;
+}
+
+message CheckChunkResponse {
+  bool valid = 1;
+  int64 size = 2;
+  uint64 version = 3;
+  repeated int64 corrupt_offsets = 4;
+}

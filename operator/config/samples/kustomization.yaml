@@ -1,0 +1,4 @@
+## Append samples of your project ##
+resources:
+- gfs_v1alpha1_gfscluster.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

@@ -1,0 +1,556 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.18.0
+  name: gfsclusters.gfs.gofs.io
+spec:
+  group: gfs.gofs.io
+  names:
+    kind: GFSCluster
+    listKind: GFSClusterList
+    plural: gfsclusters
+    shortNames:
+    - gfs
+    - gfscluster
+    singular: gfscluster
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.readyChunkservers
+      name: Chunkservers
+      type: integer
+    - jsonPath: .status.desiredChunkservers
+      name: Desired
+      type: integer
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: GFSCluster is a single-master Google File System deployment.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: GFSClusterSpec defines the desired state of a GFS cluster.
+            properties:
+              chunkSizeBytes:
+                default: 67108864
+                description: ChunkSizeBytes is the maximum chunk size. It must match
+                  in master and data pods.
+                format: int64
+                maximum: 1073741824
+                minimum: 1048576
+                type: integer
+              chunkservers:
+                description: Chunkservers configures the data plane.
+                properties:
+                  capacityBytes:
+                    description: |-
+                      CapacityBytes is advertised to the master as available chunk capacity.
+                      Zero derives capacity from the requested volume size.
+                    format: int64
+                    type: integer
+                  replicas:
+                    default: 3
+                    description: Replicas is the number of chunkserver pods and stable
+                      chunk volume claims.
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  storage:
+                    description: Storage is the per-chunkserver chunk volume.
+                    properties:
+                      size:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: |-
+                          Size is the requested persistent volume size. The controller defaults
+                          master storage to 1Gi and chunkserver storage to 10Gi.
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                      storageClassName:
+                        description: StorageClassName selects a StorageClass. Empty
+                          uses the cluster default.
+                        type: string
+                    type: object
+                  workload:
+                    description: Workload configures resources and scheduling.
+                    properties:
+                      nodeSelector:
+                        additionalProperties:
+                          type: string
+                        description: NodeSelector constrains pod placement.
+                        type: object
+                      resources:
+                        description: Resources requests and limits for the container.
+                        properties:
+                          claims:
+                            description: |-
+                              Claims lists the names of resources, defined in spec.resourceClaims,
+                              that are used by this container.
+
+                              This is an alpha field and requires enabling the
+                              DynamicResourceAllocation feature gate.
+
+                              This field is immutable. It can only be set for containers.
+                            items:
+                              description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                              properties:
+                                name:
+                                  description: |-
+                                    Name must match the name of one entry in pod.spec.resourceClaims of
+                                    the Pod where this field is used. It makes that resource available
+                                    inside a container.
+                                  type: string
+                                request:
+                                  description: |-
+                                    Request is the name chosen for a request in the referenced claim.
+                                    If empty, everything from the claim is made available, otherwise
+                                    only the result of this request.
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - name
+                            x-kubernetes-list-type: map
+                          limits:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: |-
+                              Limits describes the maximum amount of compute resources allowed.
+                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                            type: object
+                          requests:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: |-
+                              Requests describes the minimum amount of compute resources required.
+                              If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                              otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                            type: object
+                        type: object
+                      tolerations:
+                        description: Tolerations allow scheduling onto tainted nodes.
+                        items:
+                          description: |-
+                            The pod this Toleration is attached to tolerates any taint that matches
+                            the triple <key,value,effect> using the matching operator <operator>.
+                          properties:
+                            effect:
+                              description: |-
+                                Effect indicates the taint effect to match. Empty means match all taint effects.
+                                When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                              type: string
+                            key:
+                              description: |-
+                                Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                                If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                              type: string
+                            operator:
+                              description: |-
+                                Operator represents a key's relationship to the value.
+                                Valid operators are Exists and Equal. Defaults to Equal.
+                                Exists is equivalent to wildcard for value, so that a pod can
+                                tolerate all taints of a particular category.
+                              type: string
+                            tolerationSeconds:
+                              description: |-
+                                TolerationSeconds represents the period of time the toleration (which must be
+                                of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                                it is not set, which means tolerate the taint forever (do not evict). Zero and
+                                negative values will be treated as 0 (evict immediately) by the system.
+                              format: int64
+                              type: integer
+                            value:
+                              description: |-
+                                Value is the taint value the toleration matches to.
+                                If the operator is Exists, the value should be empty, otherwise just a regular string.
+                              type: string
+                          type: object
+                        type: array
+                    type: object
+                type: object
+              gcGrace:
+                description: GCGrace is the delay before orphaned chunks are physically
+                  deleted.
+                type: string
+              heartbeatTimeout:
+                description: HeartbeatTimeout is how long the master waits before
+                  declaring a chunkserver dead.
+                type: string
+              http:
+                description: HTTP configures the client-facing API service.
+                properties:
+                  nodePort:
+                    description: |-
+                      NodePort pins the client HTTP NodePort when serviceType is NodePort or
+                      LoadBalancer. Zero lets Kubernetes allocate one.
+                    format: int32
+                    maximum: 32767
+                    minimum: 30000
+                    type: integer
+                  serviceType:
+                    default: ClusterIP
+                    description: ServiceType exposes the HTTP API. Internal gRPC remains
+                      ClusterIP-only.
+                    enum:
+                    - ClusterIP
+                    - NodePort
+                    - LoadBalancer
+                    type: string
+                  tokenSecretRef:
+                    description: TokenSecretRef enables bearer-token authentication
+                      on /v1 routes.
+                    properties:
+                      key:
+                        description: The key of the secret to select from.  Must be
+                          a valid secret key.
+                        type: string
+                      name:
+                        default: ""
+                        description: |-
+                          Name of the referent.
+                          This field is effectively required, but due to backwards compatibility is
+                          allowed to be empty. Instances of this type with an empty value here are
+                          almost certainly wrong.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        type: string
+                      optional:
+                        description: Specify whether the Secret or its key must be
+                          defined
+                        type: boolean
+                    required:
+                    - key
+                    type: object
+                    x-kubernetes-map-type: atomic
+                type: object
+              image:
+                description: Image selects the master and chunkserver images.
+                properties:
+                  chunkserver:
+                    default: ghcr.io/aayush0325/gofs-chunkserver:latest
+                    description: Chunkserver is the gfs-chunkserver image.
+                    type: string
+                  master:
+                    default: ghcr.io/aayush0325/gofs-master:latest
+                    description: Master is the gfs-master image.
+                    type: string
+                  pullPolicy:
+                    default: IfNotPresent
+                    description: PullPolicy controls when the images are pulled.
+                    enum:
+                    - Always
+                    - IfNotPresent
+                    - Never
+                    type: string
+                type: object
+              leaseDuration:
+                description: LeaseDuration is the primary lease lifetime.
+                type: string
+              maintenanceInterval:
+                description: MaintenanceInterval controls re-replication and garbage
+                  collection passes.
+                type: string
+              master:
+                description: Master configures the metadata master.
+                properties:
+                  storage:
+                    description: Storage is the master BoltDB volume.
+                    properties:
+                      size:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: |-
+                          Size is the requested persistent volume size. The controller defaults
+                          master storage to 1Gi and chunkserver storage to 10Gi.
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                      storageClassName:
+                        description: StorageClassName selects a StorageClass. Empty
+                          uses the cluster default.
+                        type: string
+                    type: object
+                  workload:
+                    description: Workload configures resources and scheduling.
+                    properties:
+                      nodeSelector:
+                        additionalProperties:
+                          type: string
+                        description: NodeSelector constrains pod placement.
+                        type: object
+                      resources:
+                        description: Resources requests and limits for the container.
+                        properties:
+                          claims:
+                            description: |-
+                              Claims lists the names of resources, defined in spec.resourceClaims,
+                              that are used by this container.
+
+                              This is an alpha field and requires enabling the
+                              DynamicResourceAllocation feature gate.
+
+                              This field is immutable. It can only be set for containers.
+                            items:
+                              description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                              properties:
+                                name:
+                                  description: |-
+                                    Name must match the name of one entry in pod.spec.resourceClaims of
+                                    the Pod where this field is used. It makes that resource available
+                                    inside a container.
+                                  type: string
+                                request:
+                                  description: |-
+                                    Request is the name chosen for a request in the referenced claim.
+                                    If empty, everything from the claim is made available, otherwise
+                                    only the result of this request.
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - name
+                            x-kubernetes-list-type: map
+                          limits:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: |-
+                              Limits describes the maximum amount of compute resources allowed.
+                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                            type: object
+                          requests:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: |-
+                              Requests describes the minimum amount of compute resources required.
+                              If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                              otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                            type: object
+                        type: object
+                      tolerations:
+                        description: Tolerations allow scheduling onto tainted nodes.
+                        items:
+                          description: |-
+                            The pod this Toleration is attached to tolerates any taint that matches
+                            the triple <key,value,effect> using the matching operator <operator>.
+                          properties:
+                            effect:
+                              description: |-
+                                Effect indicates the taint effect to match. Empty means match all taint effects.
+                                When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                              type: string
+                            key:
+                              description: |-
+                                Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                                If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                              type: string
+                            operator:
+                              description: |-
+                                Operator represents a key's relationship to the value.
+                                Valid operators are Exists and Equal. Defaults to Equal.
+                                Exists is equivalent to wildcard for value, so that a pod can
+                                tolerate all taints of a particular category.
+                              type: string
+                            tolerationSeconds:
+                              description: |-
+                                TolerationSeconds represents the period of time the toleration (which must be
+                                of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                                it is not set, which means tolerate the taint forever (do not evict). Zero and
+                                negative values will be treated as 0 (evict immediately) by the system.
+                              format: int64
+                              type: integer
+                            value:
+                              description: |-
+                                Value is the taint value the toleration matches to.
+                                If the operator is Exists, the value should be empty, otherwise just a regular string.
+                              type: string
+                          type: object
+                        type: array
+                    type: object
+                type: object
+              monitoring:
+                description: Monitoring configures Prometheus scraping and Grafana
+                  dashboards.
+                properties:
+                  disabled:
+                    description: Disabled turns off all monitoring resources. Monitoring
+                      is enabled by default.
+                    type: boolean
+                  grafanaDashboardLabels:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      GrafanaDashboardLabels are added to the dashboard ConfigMap. Grafana
+                      sidecars commonly select grafana_dashboard: "1".
+                    type: object
+                  serviceMonitorLabels:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      ServiceMonitorLabels are added to the generated ServiceMonitor. Set this
+                      to the label selected by your Prometheus Operator, for example
+                      release: kube-prometheus-stack.
+                    type: object
+                type: object
+              replicationFactor:
+                description: |-
+                  ReplicationFactor is the target number of replicas per chunk. Zero uses
+                  min(3, chunkservers.replicas).
+                format: int32
+                minimum: 1
+                type: integer
+              tls:
+                description: TLS configures internal mutual TLS.
+                properties:
+                  secretName:
+                    description: |-
+                      SecretName uses an existing secret with ca.crt, server.crt, server.key,
+                      client.crt, and client.key. When empty the operator generates and owns one.
+                    type: string
+                type: object
+            type: object
+          status:
+            description: GFSClusterStatus defines the observed state of a GFSCluster.
+            properties:
+              conditions:
+                description: Conditions describe the current reconciliation state.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              desiredChunkservers:
+                description: DesiredChunkservers is the requested chunkserver replica
+                  count.
+                format: int32
+                type: integer
+              grpcEndpoint:
+                description: GRPCEndpoint is the in-cluster master gRPC endpoint.
+                type: string
+              httpEndpoint:
+                description: HTTPEndpoint is the in-cluster client API endpoint.
+                type: string
+              masterReady:
+                description: MasterReady reports whether the master pod is ready.
+                type: boolean
+              observedGeneration:
+                description: ObservedGeneration is the last reconciled spec generation.
+                format: int64
+                type: integer
+              phase:
+                description: Phase is Pending, Progressing, Ready, or Error.
+                enum:
+                - Pending
+                - Progressing
+                - Ready
+                - Error
+                type: string
+              readyChunkservers:
+                description: ReadyChunkservers is the number of ready chunkserver
+                  pods.
+                format: int32
+                type: integer
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

@@ -1,0 +1,8 @@
+.git
+bin
+data
+certs
+operator
+docs
+*.md
+!README.md

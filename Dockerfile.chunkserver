@@ -1,0 +1,26 @@
+# syntax=docker/dockerfile:1
+FROM golang:1.24-alpine AS build
+WORKDIR /src
+RUN apk add --no-cache git ca-certificates
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/gfs-chunkserver ./cmd/gfs-chunkserver
+
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates su-exec \
+    && addgroup -S -g 10001 gfs \
+    && adduser -S -D -H -u 10001 -G gfs gfs
+COPY --from=build /out/gfs-chunkserver /usr/local/bin/gfs-chunkserver
+COPY deploy/docker-entrypoint.sh /usr/local/bin/docker-entrypoint
+RUN chmod +x /usr/local/bin/docker-entrypoint
+ENV GFS_CHUNKSERVER_DATA_DIR=/data \
+    GFS_TLS_CA=/certs/ca.crt \
+    GFS_TLS_CERT=/certs/server.crt \
+    GFS_TLS_KEY=/certs/server.key \
+    GFS_TLS_CLIENT_CERT=/certs/client.crt \
+    GFS_TLS_CLIENT_KEY=/certs/client.key
+VOLUME ["/data"]
+EXPOSE 8081 9091
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint"]
+CMD ["gfs-chunkserver"]

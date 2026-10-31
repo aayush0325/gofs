@@ -1,0 +1,170 @@
+name: gofs
+
+services:
+  certs:
+    image: alpine:3.20
+    command:
+      - /bin/sh
+      - -c
+      - apk add --no-cache openssl >/dev/null && /scripts/gen-certs.sh /certs
+    volumes:
+      - ../../scripts:/scripts:ro
+      - certs:/certs
+
+  master:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.master
+    command:
+      - gfs-master
+      - --grpc-listen=:9090
+      - --http-listen=:8080
+      - --data-dir=/data
+      - --replication=3
+      - --chunk-size=67108864
+      - --tls-ca=/certs/ca.crt
+      - --tls-cert=/certs/server.crt
+      - --tls-key=/certs/server.key
+      - --tls-client-cert=/certs/client.crt
+      - --tls-client-key=/certs/client.key
+    depends_on:
+      certs:
+        condition: service_completed_successfully
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+    volumes:
+      - certs:/certs
+      - master-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  chunkserver-1:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.chunkserver
+    command:
+      - gfs-chunkserver
+      - --id=chunkserver-1
+      - --grpc-listen=:9091
+      - --http-listen=:8081
+      - --advertise=chunkserver-1:9091
+      - --master=master:9090
+      - --data-dir=/data
+      - --capacity=107374182400
+      - --tls-ca=/certs/ca.crt
+      - --tls-cert=/certs/server.crt
+      - --tls-key=/certs/server.key
+      - --tls-client-cert=/certs/client.crt
+      - --tls-client-key=/certs/client.key
+    depends_on:
+      certs:
+        condition: service_completed_successfully
+      master:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+    volumes:
+      - certs:/certs
+      - chunkserver-1-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  chunkserver-2:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.chunkserver
+    command:
+      - gfs-chunkserver
+      - --id=chunkserver-2
+      - --grpc-listen=:9091
+      - --http-listen=:8081
+      - --advertise=chunkserver-2:9091
+      - --master=master:9090
+      - --data-dir=/data
+      - --capacity=107374182400
+      - --tls-ca=/certs/ca.crt
+      - --tls-cert=/certs/server.crt
+      - --tls-key=/certs/server.key
+      - --tls-client-cert=/certs/client.crt
+      - --tls-client-key=/certs/client.key
+    depends_on:
+      certs:
+        condition: service_completed_successfully
+      master:
+        condition: service_healthy
+    ports:
+      - "8082:8081"
+    volumes:
+      - certs:/certs
+      - chunkserver-2-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  chunkserver-3:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.chunkserver
+    command:
+      - gfs-chunkserver
+      - --id=chunkserver-3
+      - --grpc-listen=:9091
+      - --http-listen=:8081
+      - --advertise=chunkserver-3:9091
+      - --master=master:9090
+      - --data-dir=/data
+      - --capacity=107374182400
+      - --tls-ca=/certs/ca.crt
+      - --tls-cert=/certs/server.crt
+      - --tls-key=/certs/server.key
+      - --tls-client-cert=/certs/client.crt
+      - --tls-client-key=/certs/client.key
+    depends_on:
+      certs:
+        condition: service_completed_successfully
+      master:
+        condition: service_healthy
+    ports:
+      - "8083:8081"
+    volumes:
+      - certs:/certs
+      - chunkserver-3-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  client:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.client
+    profiles: ["tools"]
+    depends_on:
+      master:
+        condition: service_healthy
+    environment:
+      GFS_SERVER: http://master:8080
+    entrypoint: ["/usr/local/bin/gfs-client"]
+    command: ["status"]
+    user: "10001:10001"
+
+volumes:
+  certs:
+  master-data:
+  chunkserver-1-data:
+  chunkserver-2-data:
+  chunkserver-3-data:

@@ -1,0 +1,62 @@
+// Copyright 2026 The gofs Authors.
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package gfs.v1;
+
+option go_package = "github.com/aayush0325/gofs/gen/gfs/v1;gfsv1";
+
+// NodeType identifies a namespace entry as either a file or a directory.
+enum NodeType {
+  NODE_TYPE_UNSPECIFIED = 0;
+  NODE_TYPE_FILE = 1;
+  NODE_TYPE_DIRECTORY = 2;
+}
+
+// ChunkAccess describes why a client is asking the master for chunk locations.
+// WRITE and APPEND requests acquire a lease and may trigger copy-on-write when
+// the chunk is shared with a snapshot.
+enum ChunkAccess {
+  CHUNK_ACCESS_READ = 0;
+  CHUNK_ACCESS_WRITE = 1;
+  CHUNK_ACCESS_APPEND = 2;
+}
+
+// Replica describes one chunkserver that stores a chunk.
+message Replica {
+  string server_id = 1;
+  string address = 2;
+}
+
+// FileInfo is the namespace metadata returned by Stat and List.
+message FileInfo {
+  string path = 1;
+  NodeType type = 2;
+  uint32 mode = 3;
+  int64 size = 4;
+  int64 mtime_unix_nano = 5;
+  int64 chunk_count = 6;
+  string snapshot_of = 7;
+}
+
+// ChunkLocation is the complete routing information a client needs for one
+// mutation or read. Offset is relative to the chunk's data file.
+message ChunkLocation {
+  string handle = 1;
+  uint64 version = 2;
+  int64 size = 3;
+  int64 chunk_index = 4;
+  int64 chunk_offset = 5;
+  repeated Replica replicas = 6;
+  string primary_server_id = 7;
+  int64 lease_expires_unix_nano = 8;
+}
+
+// ChunkState is a chunkserver's view of one local chunk. It is used during
+// registration and heartbeats so the master can rebuild replica placement.
+message ChunkState {
+  string handle = 1;
+  uint64 version = 2;
+  int64 size = 3;
+}

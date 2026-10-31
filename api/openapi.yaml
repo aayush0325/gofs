@@ -1,0 +1,382 @@
+openapi: 3.0.3
+info:
+  title: gofs HTTP Client API
+  version: 1.0.0
+  description: |
+    Client-facing HTTP/JSON API for the single-master Google File System
+    implementation in this repository. Data operations acquire GFS leases and
+    talk directly to chunkservers over mutually authenticated gRPC.
+    Internal gRPC is documented by proto/gfs/v1/*.proto.
+servers:
+  - url: http://localhost:8080
+    description: Local master HTTP endpoint
+security:
+  - bearerAuth: []
+  - {}
+paths:
+  /healthz:
+    get:
+      summary: Liveness probe
+      description: Returns 200 while the HTTP process is running. It does not check dependencies.
+      security: []
+      responses:
+        "200": {description: Process is alive}
+  /readyz:
+    get:
+      summary: Readiness probe
+      description: Checks that the master metadata store can serve a root stat.
+      security: []
+      responses:
+        "200": {description: Master is ready}
+        "404": {description: Root metadata is missing}
+        "500": {description: Metadata store error}
+  /v1/status:
+    get:
+      summary: Cluster status
+      description: Returns namespace counts, replication settings, and chunkserver liveness.
+      responses:
+        "200":
+          description: Cluster status
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ClusterStatus"}
+        "500": {$ref: "#/components/responses/Error"}
+  /v1/mkdir:
+    post:
+      summary: Create a directory
+      description: Creates one directory or, with recursive=true, every missing ancestor. An existing directory is accepted only in recursive mode.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/MkdirRequest"}
+      responses:
+        "201":
+          description: Directory created
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/FileInfo"}
+        "400": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+  /v1/create:
+    post:
+      summary: Create an empty file
+      description: Creates an empty regular file. The parent directory must already exist.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CreateRequest"}
+      responses:
+        "201":
+          description: File created
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/FileInfo"}
+        "400": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+  /v1/stat:
+    get:
+      summary: Stat a path
+      description: Returns metadata and the logical file size derived from committed chunk sizes.
+      parameters:
+        - $ref: "#/components/parameters/Path"
+      responses:
+        "200":
+          description: Metadata
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/FileInfo"}
+        "404": {$ref: "#/components/responses/Error"}
+  /v1/list:
+    get:
+      summary: List a directory
+      description: Returns direct children by default, or every descendant when recursive=true. The directory itself is not included.
+      parameters:
+        - $ref: "#/components/parameters/Path"
+        - name: recursive
+          in: query
+          description: Walk the complete descendant subtree.
+          schema: {type: boolean, default: false}
+      responses:
+        "200":
+          description: Directory entries
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entries]
+                properties:
+                  entries:
+                    type: array
+                    items: {$ref: "#/components/schemas/FileInfo"}
+        "400": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /v1/delete:
+    delete:
+      summary: Delete a file or directory
+      description: Deletes namespace metadata immediately. Orphaned chunks are physically removed after the configured GC grace period.
+      parameters:
+        - $ref: "#/components/parameters/Path"
+        - name: recursive
+          in: query
+          description: Required to delete a directory with children.
+          schema: {type: boolean, default: false}
+      responses:
+        "204": {description: Deleted}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+  /v1/rename:
+    post:
+      summary: Rename a path
+      description: Atomically moves a file or directory subtree. The destination must not exist and cannot be inside the source.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/RenameRequest"}
+      responses:
+        "204": {description: Renamed}
+        "400": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+  /v1/snapshot:
+    post:
+      summary: Create a copy-on-write snapshot
+      description: Copies namespace metadata in one transaction and shares chunk handles. The first mutation of either copy unshares the affected chunk.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SnapshotRequest"}
+      responses:
+        "201":
+          description: Snapshot root
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/FileInfo"}
+        "400": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+  /v1/read:
+    get:
+      summary: Read a byte range
+      description: Streams bytes with checksum verification and replica fallback. If length is omitted or reaches past EOF, reading stops at EOF.
+      parameters:
+        - $ref: "#/components/parameters/Path"
+        - name: offset
+          in: query
+          schema: {type: integer, format: int64, minimum: 0, default: 0}
+        - name: length
+          in: query
+          description: Number of bytes; -1 or omitted means to EOF.
+          schema: {type: integer, format: int64, default: -1}
+      responses:
+        "200":
+          description: Byte range
+          content:
+            application/octet-stream:
+              schema: {type: string, format: binary}
+        "400": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "416": {$ref: "#/components/responses/Error"}
+  /v1/write:
+    put:
+      summary: Stream an overwrite
+      description: |
+        Streams a request body into a file at an offset. The stream is split at
+        chunk and 4 MiB transfer boundaries. Each block is atomic, but a failure
+        mid-stream may leave earlier blocks committed (GFS per-chunk semantics).
+      parameters:
+        - $ref: "#/components/parameters/Path"
+        - name: offset
+          in: query
+          description: Byte offset; must be less than or equal to the current file size.
+          schema: {type: integer, format: int64, minimum: 0, default: 0}
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: {type: string, format: binary}
+      responses:
+        "200":
+          description: Write committed
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/WriteResult"}
+        "400": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "416": {$ref: "#/components/responses/Error"}
+        "502": {$ref: "#/components/responses/Error"}
+  /v1/append:
+    post:
+      summary: Atomic record append
+      description: |
+        Appends one record of at most 4 MiB. If the record does not fit in the
+        last chunk, the chunk is zero-padded and the record is placed atomically
+        in a fresh chunk. The response offset is the record's absolute file
+        offset.
+      parameters:
+        - $ref: "#/components/parameters/Path"
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: {type: string, format: binary, maxLength: 4194304}
+      responses:
+        "200":
+          description: Record appended
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AppendResult"}
+        "400": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "413": {$ref: "#/components/responses/Error"}
+        "502": {$ref: "#/components/responses/Error"}
+  /v1/locations:
+    get:
+      summary: Inspect chunk routing
+      description: |
+        Returns protojson for one chunk location. access=read is debug-only.
+        access=write or access=append acquires a lease and may perform
+        copy-on-write, so those modes have side effects. 64-bit protojson
+        integers are encoded as strings.
+      parameters:
+        - $ref: "#/components/parameters/Path"
+        - name: offset
+          in: query
+          schema: {type: integer, format: int64, minimum: 0, default: 0}
+        - name: access
+          in: query
+          schema: {type: string, enum: [read, write, append], default: read}
+        - name: append_size
+          in: query
+          schema: {type: integer, format: int64, minimum: 0, default: 0}
+      responses:
+        "200":
+          description: Chunk location
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ChunkLocation"}
+        "400": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "416": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Required only when the master is started with --http-token.
+  parameters:
+    Path:
+      name: path
+      in: query
+      required: true
+      description: Absolute canonical GFS path.
+      schema: {type: string, example: /data/file}
+  responses:
+    Error:
+      description: Structured error
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+  schemas:
+    MkdirRequest:
+      type: object
+      required: [path]
+      properties:
+        path: {type: string, example: /data}
+        recursive: {type: boolean, default: false}
+    CreateRequest:
+      type: object
+      required: [path]
+      properties:
+        path: {type: string, example: /data/file}
+        mode: {type: integer, format: int32, example: 420, description: "Unix mode; defaults to 0644."}
+    RenameRequest:
+      type: object
+      required: [source, destination]
+      properties:
+        source: {type: string, example: /data/file}
+        destination: {type: string, example: /data/renamed}
+    SnapshotRequest:
+      type: object
+      required: [source, destination]
+      properties:
+        source: {type: string, example: /data/file}
+        destination: {type: string, example: /data/file.snap}
+    FileInfo:
+      type: object
+      properties:
+        path: {type: string}
+        type: {type: string, enum: [file, directory]}
+        mode: {type: integer, format: int32}
+        size: {type: integer, format: int64}
+        mtime_unix_nano: {type: integer, format: int64}
+        chunk_count: {type: integer}
+        snapshot_of: {type: string}
+    WriteResult:
+      type: object
+      properties:
+        path: {type: string}
+        bytes_written: {type: integer, format: int64}
+        size: {type: integer, format: int64}
+    AppendResult:
+      type: object
+      properties:
+        path: {type: string}
+        offset: {type: integer, format: int64}
+        bytes_appended: {type: integer, format: int64}
+        size: {type: integer, format: int64}
+    ClusterStatus:
+      type: object
+      properties:
+        chunk_size_bytes: {type: integer, format: int64}
+        replication_factor: {type: integer}
+        files: {type: integer, format: int64}
+        directories: {type: integer, format: int64}
+        chunks: {type: integer, format: int64}
+        orphaned_chunks: {type: integer, format: int64}
+        chunkservers:
+          type: array
+          items: {$ref: "#/components/schemas/ChunkserverStatus"}
+    ChunkserverStatus:
+      type: object
+      properties:
+        id: {type: string}
+        address: {type: string}
+        capacity_bytes: {type: integer, format: int64}
+        used_bytes: {type: integer, format: int64}
+        last_seen_unix_nano: {type: integer, format: int64}
+        alive: {type: boolean}
+        chunk_count: {type: integer, format: int64}
+    ChunkLocation:
+      type: object
+      description: protojson shape; int64 fields are strings.
+      properties:
+        handle: {type: string}
+        version: {type: string}
+        size: {type: string}
+        chunkIndex: {type: string}
+        chunkOffset: {type: string}
+        primaryServerId: {type: string}
+        leaseExpiresUnixNano: {type: string}
+        replicas:
+          type: array
+          items:
+            type: object
+            properties:
+              serverId: {type: string}
+              address: {type: string}
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: {type: string, example: NOT_FOUND}
+            message: {type: string}
+            request_id: {type: string}

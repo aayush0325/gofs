@@ -1,0 +1,16 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: gofs-demo
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      # GFSCluster's client Service uses NodePort 30080 in this demo.
+      - containerPort: 30080
+        hostPort: 8080
+        listenAddress: "127.0.0.1"
+        protocol: TCP
+      # gofs-operator web console.
+      - containerPort: 30090
+        hostPort: 8090
+        listenAddress: "127.0.0.1"
+        protocol: TCP

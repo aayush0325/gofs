@@ -1,0 +1,33 @@
+# This rule is not used by the project gofs-operator itself.
+# It is provided to allow the cluster admin to help manage permissions for users.
+#
+# Grants permissions to create, update, and delete resources within the gfs.gofs.io.
+# This role is intended for users who need to manage these resources
+# but should not control RBAC or manage permissions for others.
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: gofs-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: gfscluster-editor-role
+rules:
+- apiGroups:
+  - gfs.gofs.io
+  resources:
+  - gfsclusters
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - gfs.gofs.io
+  resources:
+  - gfsclusters/status
+  verbs:
+  - get

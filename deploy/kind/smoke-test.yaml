@@ -1,0 +1,49 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gfs-demo-smoke
+  namespace: default
+  labels:
+    app.kubernetes.io/name: gofs
+    app.kubernetes.io/component: demo
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 120
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gofs
+        app.kubernetes.io/component: demo
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: client
+          image: gofs-client:local
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: GFS_SERVER
+              value: http://gfs-client.default.svc.cluster.local:8080
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              set -x
+              gfs-client delete /demo --recursive || true
+              gfs-client mkdir /demo
+              gfs-client create /demo/hello
+              printf 'hello from kind\n' | gfs-client write /demo/hello -
+              printf 'one atomic record\n' | gfs-client append /demo/hello -
+              gfs-client stat /demo/hello
+              gfs-client read /demo/hello
+              gfs-client status

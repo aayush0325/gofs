@@ -1,0 +1,179 @@
+// Copyright 2026 The gofs Authors.
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package gfs.v1;
+
+import "gfs/v1/common.proto";
+
+option go_package = "github.com/aayush0325/gofs/gen/gfs/v1;gfsv1";
+
+// Master is the single metadata authority in this implementation. Clients use
+// it to mutate the namespace, discover chunk replicas, and acquire leases.
+// Chunkservers use it to register, heartbeat, and report committed chunk sizes.
+service Master {
+  // RegisterChunkserver records a chunkserver and reconciles its local chunks.
+  rpc RegisterChunkserver(RegisterChunkserverRequest) returns (RegisterChunkserverResponse);
+  // Heartbeat refreshes liveness and reports the chunkserver's local chunks.
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  // GetChunkLocations returns replica routing information and, for mutations,
+  // grants a primary lease. Copy-on-write is performed before returning a
+  // shared chunk for mutation.
+  rpc GetChunkLocations(GetChunkLocationsRequest) returns (GetChunkLocationsResponse);
+  // ReportChunk updates the master's copy of a chunk's version and size after
+  // a successful mutation. The primary chunkserver calls this before replying
+  // to its client.
+  rpc ReportChunk(ReportChunkRequest) returns (ReportChunkResponse);
+  // Mkdir creates a directory.
+  rpc Mkdir(MkdirRequest) returns (MkdirResponse);
+  // CreateFile creates an empty file.
+  rpc CreateFile(CreateFileRequest) returns (CreateFileResponse);
+  // Delete removes a file or directory tree from the namespace.
+  rpc Delete(DeleteRequest) returns (DeleteResponse);
+  // Rename moves a file or directory, atomically updating descendant paths.
+  rpc Rename(RenameRequest) returns (RenameResponse);
+  // Stat returns metadata for one path.
+  rpc Stat(StatRequest) returns (StatResponse);
+  // List returns direct children, or a recursive walk when requested.
+  rpc List(ListRequest) returns (ListResponse);
+  // Snapshot copies namespace metadata and shares chunk data copy-on-write.
+  rpc Snapshot(SnapshotRequest) returns (SnapshotResponse);
+  // GetClusterStatus returns a point-in-time capacity and placement summary.
+  rpc GetClusterStatus(GetClusterStatusRequest) returns (GetClusterStatusResponse);
+}
+
+message RegisterChunkserverRequest {
+  string server_id = 1;
+  string address = 2;
+  int64 capacity_bytes = 3;
+  int64 used_bytes = 4;
+  repeated ChunkState chunks = 5;
+}
+
+message RegisterChunkserverResponse {
+  // delete_handles contains chunks the chunkserver should remove because the
+  // master has no live metadata for them.
+  repeated string delete_handles = 1;
+  int64 heartbeat_interval_seconds = 2;
+}
+
+message HeartbeatRequest {
+  string server_id = 1;
+  string address = 2;
+  int64 capacity_bytes = 3;
+  int64 used_bytes = 4;
+  repeated ChunkState chunks = 5;
+}
+
+message HeartbeatResponse {
+  repeated string delete_handles = 1;
+}
+
+message GetChunkLocationsRequest {
+  string path = 1;
+  int64 offset = 2;
+  ChunkAccess access = 3;
+  // append_size is the size of the record the client intends to append. The
+  // master rejects records larger than a chunk. If a record does not fit in
+  // the returned last chunk, the client must pad that chunk and request a new
+  // location, preserving atomic record append semantics.
+  int64 append_size = 4;
+}
+
+message GetChunkLocationsResponse {
+  ChunkLocation location = 1;
+}
+
+message ReportChunkRequest {
+  string server_id = 1;
+  string handle = 2;
+  uint64 version = 3;
+  int64 size = 4;
+}
+
+message ReportChunkResponse {}
+
+message MkdirRequest {
+  string path = 1;
+  bool recursive = 2;
+}
+
+message MkdirResponse {
+  FileInfo file = 1;
+}
+
+message CreateFileRequest {
+  string path = 1;
+  uint32 mode = 2;
+}
+
+message CreateFileResponse {
+  FileInfo file = 1;
+}
+
+message DeleteRequest {
+  string path = 1;
+  bool recursive = 2;
+}
+
+message DeleteResponse {}
+
+message RenameRequest {
+  string source = 1;
+  string destination = 2;
+}
+
+message RenameResponse {}
+
+message StatRequest {
+  string path = 1;
+}
+
+message StatResponse {
+  FileInfo file = 1;
+}
+
+message ListRequest {
+  string path = 1;
+  bool recursive = 2;
+}
+
+message ListResponse {
+  repeated FileInfo entries = 1;
+}
+
+message SnapshotRequest {
+  string source = 1;
+  string destination = 2;
+}
+
+message SnapshotResponse {
+  FileInfo file = 1;
+}
+
+message GetClusterStatusRequest {}
+
+message ClusterStatus {
+  int64 chunk_size_bytes = 1;
+  int32 replication_factor = 2;
+  int64 files = 3;
+  int64 directories = 4;
+  int64 chunks = 5;
+  int64 orphaned_chunks = 6;
+  repeated ChunkserverStatus chunkservers = 7;
+}
+
+message ChunkserverStatus {
+  string server_id = 1;
+  string address = 2;
+  int64 capacity_bytes = 3;
+  int64 used_bytes = 4;
+  int64 last_seen_unix_nano = 5;
+  bool alive = 6;
+  int64 chunk_count = 7;
+}
+
+message GetClusterStatusResponse {
+  ClusterStatus status = 1;
+}

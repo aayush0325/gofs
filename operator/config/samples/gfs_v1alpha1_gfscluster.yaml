@@ -1,0 +1,38 @@
+apiVersion: gfs.gofs.io/v1alpha1
+kind: GFSCluster
+metadata:
+  name: gfs
+  namespace: default
+  labels:
+    app.kubernetes.io/name: gofs
+spec:
+  image:
+    # Load the images into your cluster or replace these with registry paths.
+    master: gofs-master:local
+    chunkserver: gofs-chunkserver:local
+    pullPolicy: IfNotPresent
+  master:
+    storage:
+      size: 1Gi
+  chunkservers:
+    replicas: 3
+    storage:
+      size: 10Gi
+  chunkSizeBytes: 67108864
+  replicationFactor: 3
+  leaseDuration: 60s
+  heartbeatTimeout: 15s
+  gcGrace: 1m
+  maintenanceInterval: 10s
+  http:
+    serviceType: ClusterIP
+    # tokenSecretRef:
+    #   name: gfs-http-token
+    #   key: token
+  monitoring:
+    # Prometheus Operator and Grafana sidecar are optional. When absent, the
+    # operator still creates the dashboard ConfigMap and skips the ServiceMonitor.
+    serviceMonitorLabels:
+      release: kube-prometheus-stack
+    grafanaDashboardLabels:
+      grafana_dashboard: "1"

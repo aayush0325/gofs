@@ -1,0 +1,19 @@
+# syntax=docker/dockerfile:1
+FROM golang:1.24-alpine AS build
+WORKDIR /src
+RUN apk add --no-cache git ca-certificates
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/gfs-client ./cmd/gfs-client
+
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates su-exec \
+    && addgroup -S -g 10001 gfs \
+    && adduser -S -D -H -u 10001 -G gfs gfs
+COPY --from=build /out/gfs-client /usr/local/bin/gfs-client
+COPY deploy/docker-entrypoint.sh /usr/local/bin/docker-entrypoint
+RUN chmod +x /usr/local/bin/docker-entrypoint
+ENV GFS_SERVER=http://master:8080
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint"]
+CMD ["gfs-client", "status"]

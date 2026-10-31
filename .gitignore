@@ -1,0 +1,7 @@
+bin/
+data/
+certs/
+*.db
+*.db.tmp
+*.log
+.env
